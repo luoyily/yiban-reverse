@@ -1,0 +1,725 @@
+
+============================
+package com.yiban.app.login.activity;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Handler;
+import android.text.SpannableString;
+import android.text.TextPaint;
+import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
+import android.view.KeyEvent;
+import android.view.View;
+import android.widget.CheckedTextView;
+import android.widget.TextView;
+import com.yiban.app.application.YibanApplication;
+import com.yiban.app.base.activity.CommonActivity;
+import com.yiban.app.bean.Version;
+import com.yiban.app.dialog.ServiceProtocolDialog;
+import com.yiban.app.eventbus.EventBusConstants;
+import com.yiban.app.eventbus.EventBusHelper;
+import com.yiban.app.eventbus.event.CommonEvent;
+import com.yiban.app.eventbus.event.LoginDoneEvent;
+import com.yiban.app.helper.CheckUpdateHelper;
+import com.yiban.app.helper.EncryptionHelper;
+import com.yiban.app.helper.NavigationHelper;
+import com.yiban.app.helper.ServiceProtocolHelper;
+import com.yiban.app.jni.JNIHelper;
+import com.yiban.app.login.bean.LoginBean;
+import com.yiban.app.login.bean.VersionCheckBean;
+import com.yiban.app.login.interfaces.LoginService;
+import com.yiban.app.login.utils.LoginUtil;
+import com.yiban.app.utils.EditTextInputWatcher;
+import com.yiban.app.utils.EditorAction;
+import com.yiban.app.utils.SPUtil;
+import com.yiban.app.utils.Util;
+import com.yiban.app.widget.EditTextWithDelete;
+import com.yiban.framework.log.LogManager;
+import com.yiban.framework.net.retrofit.CallBack;
+import com.yiban.framework.net.retrofit.RetrofitUtil;
+import java.util.regex.Pattern;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
+
+public class YiBanLoginActivity extends CommonActivity implements View.OnClickListener {
+    private static final int AGREEMENT_TYPE_PROTECT = 2;
+    private static final int AGREEMENT_TYPE_SERVICE = 1;
+    private static final int LOGIN_STATUS_DEFAULT = 1;
+    private static final int LOGIN_STATUS_LOGINING = 2;
+    public static final int PASSWORD_LENGTH_MAX = 20;
+    public static final int PASSWORD_LENGTH_MIN = 8;
+    /* access modifiers changed from: private */
+    public EditTextWithDelete mAccountEditor;
+    /* access modifiers changed from: private */
+    public String mAccountValue;
+    private CheckedTextView mAgreementCheck;
+    private View mCampusCardLogin;
+    private TextView mForgetPassword;
+    private Handler mHandler = new Handler();
+    private TextView mLoginButton;
+    private LoginService mLoginService;
+    /* access modifiers changed from: private */
+    public EditTextWithDelete mPasswordEditor;
+    /* access modifiers changed from: private */
+    public String mPasswordValue;
+
+    /* access modifiers changed from: protected */
+    public int statusBarColor() {
+        return -1;
+    }
+
+    public void initIntentParam(Intent intent) {
+        YiBanLoginActivity.super.initIntentParam(intent);
+    }
+
+    public void beforeInitView() {
+        YiBanLoginActivity.super.beforeInitView();
+        setContentView(2131493020);
+        SPUtil.putString(this.mAppSP, "k_login_show_organization_province_page", "");
+        this.mLoginService = (LoginService) RetrofitUtil.createService(LoginService.class);
+        EventBusHelper.register(this);
+    }
+
+    /* JADX WARNING: type inference failed for: r2v0, types: [android.content.Context, com.yiban.app.login.activity.YiBanLoginActivity, android.view.View$OnClickListener, com.yiban.app.base.activity.CommonActivity, android.app.Activity] */
+    public void initView() {
+        YiBanLoginActivity.super.initView();
+        this.mAccountEditor = (EditTextWithDelete) findViewById(2131296878);
+        this.mPasswordEditor = (EditTextWithDelete) findViewById(2131296879);
+        this.mLoginButton = (TextView) findViewById(2131298808);
+        this.mForgetPassword = (TextView) findViewById(2131298810);
+        this.mCampusCardLogin = findViewById(2131298809);
+        this.mAgreementCheck = (CheckedTextView) findViewById(2131296563);
+        findViewById(2131296944).setOnClickListener(this);
+        this.mAccountEditor.editor().setOnEditorActionListener(new EditorAction(this, this));
+        this.mAccountEditor.editor().setInputType(3);
+        this.mPasswordEditor.editor().setImeOptions(2);
+        this.mPasswordEditor.editor().setOnEditorActionListener(new PasswordEditorAction(this, this));
+        this.mPasswordEditor.editor().addTextChangedListener(new EditTextInputWatcher(this));
+        this.mPasswordEditor.editor().setInputType(129);
+        Util.setEditTextInhibitInputSpace(this.mPasswordEditor.editor());
+        this.mLoginButton.setOnClickListener(this);
+        this.mForgetPassword.setOnClickListener(this);
+        this.mCampusCardLogin.setOnClickListener(this);
+    }
+
+    /* access modifiers changed from: protected */
+    public void onActivityResult(int i, int i2, Intent intent) {
+        YiBanLoginActivity.super.onActivityResult(i, i2, intent);
+        if (i == 292 && i2 == -1) {
+            gotoHomePage();
+        }
+    }
+
+    public void setViewStatus() {
+        YiBanLoginActivity.super.setViewStatus();
+        startVersionCheck();
+        buildRegisterText();
+        updateLoginStatus(1);
+        String string = SPUtil.getString(this.mAppSP, "login_password", "");
+        if (!TextUtils.isEmpty(string)) {
+            this.mPasswordValue = EncryptionHelper.decryptPasswordRSA(string, JNIHelper.getPwdRSAPrivateKey().getBytes());
+        }
+        this.mAccountValue = SPUtil.getString(this.mAppSP, "login_account", "");
+        initAccountValue();
+        buildAgreementText();
+    }
+
+    private void buildAgreementText() {
+        String str = "《" + getString(2131755758) + "》";
+        String str2 = "《" + getString(2131755680) + "》";
+        StringBuilder sb = new StringBuilder("已阅读并同意");
+        sb.append(str);
+        sb.append(str2);
+        SpannableString spannableString = new SpannableString(sb.toString());
+        int indexOf = sb.toString().indexOf(str);
+        spannableString.setSpan(new AgreementClickableSpan(1), indexOf, str.length() + indexOf, 33);
+        int indexOf2 = sb.toString().indexOf(str2);
+        spannableString.setSpan(new AgreementClickableSpan(2), indexOf2, str2.length() + indexOf2, 33);
+        TextView textView = (TextView) findViewById(2131298878);
+        textView.setText(spannableString);
+        textView.setHighlightColor(0);
+        textView.setMovementMethod(LinkMovementMethod.getInstance());
+    }
+
+    public class AgreementClickableSpan extends ClickableSpan {
+        int agreementType;
+
+        public AgreementClickableSpan(int i) {
+            this.agreementType = i;
+        }
+
+        /* JADX WARNING: type inference failed for: r4v2, types: [com.yiban.app.login.activity.YiBanLoginActivity, android.content.ContextWrapper] */
+        /* JADX WARNING: type inference failed for: r4v3, types: [com.yiban.app.login.activity.YiBanLoginActivity, android.content.ContextWrapper] */
+        public void onClick(View view) {
+            int i = this.agreementType;
+            if (i == 1) {
+                ServiceProtocolHelper.go2YibanAgreement(YiBanLoginActivity.this, ServiceProtocolDialog.SERVICE_PROTOCOL_URL, YiBanLoginActivity.this.getString(2131755758));
+            } else if (i == 2) {
+                ServiceProtocolHelper.go2YibanAgreement(YiBanLoginActivity.this, ServiceProtocolDialog.PRIVATE_PROTOCOL_URL, YiBanLoginActivity.this.getString(2131755680));
+            }
+        }
+
+        public void updateDrawState(TextPaint textPaint) {
+            super.updateDrawState(textPaint);
+            textPaint.setColor(YiBanLoginActivity.this.getResources().getColor(2131099765));
+            textPaint.setUnderlineText(false);
+        }
+    }
+
+    /* access modifiers changed from: protected */
+    public void onNewIntent(Intent intent) {
+        YiBanLoginActivity.super.onNewIntent(intent);
+    }
+
+    /* access modifiers changed from: protected */
+    public void onDestroy() {
+        YiBanLoginActivity.super.onDestroy();
+        EventBusHelper.unregister(this);
+    }
+
+    public void onClick(View view) {
+        int id = view.getId();
+        if (id == 2131296944) {
+            acceptAgreement();
+        } else if (id != 2131298812) {
+            switch (id) {
+                case 2131298808:
+                    startLogin();
+                    return;
+                case 2131298809:
+                    startActivity(new Intent(this.mContext, UISLoginActivity.class));
+                    return;
+                case 2131298810:
+                    forgetPassword();
+                    return;
+                default:
+                    return;
+            }
+        } else {
+            register();
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onEvent(CommonEvent commonEvent) {
+        String id = commonEvent.getId();
+        if (TextUtils.isEmpty(id)) {
+            return;
+        }
+        if (id.equalsIgnoreCase(EventBusConstants.EVENT_ID_REGISTER_DONE) || id.equalsIgnoreCase(EventBusConstants.EVENT_ID_RESET_PASSWORD_DONE)) {
+            String string = commonEvent.getData().getString(EventBusConstants.EVENT_DATA_ACCOUNT);
+            if (!TextUtils.isEmpty(string)) {
+                updateLoginUI(string);
+                LogManager instance = LogManager.getInstance();
+                String str = this.TAG;
+                instance.d(str, "register account = " + string);
+            }
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onLoginDoneEvent(LoginDoneEvent loginDoneEvent) {
+        finish();
+    }
+
+    private void initAccountValue() {
+        this.mHandler.post(new Runnable() {
+            public void run() {
+                if (!TextUtils.isEmpty(YiBanLoginActivity.this.mAccountValue)) {
+                    YiBanLoginActivity.this.mAccountEditor.editor().setText(YiBanLoginActivity.this.mAccountValue);
+                    YiBanLoginActivity.this.mAccountEditor.editor().setSelection(YiBanLoginActivity.this.mAccountValue.length());
+                } else {
+                    YiBanLoginActivity.this.mAccountEditor.editor().setText("");
+                }
+                if (!TextUtils.isEmpty(YiBanLoginActivity.this.mPasswordValue)) {
+                    YiBanLoginActivity.this.mPasswordEditor.editor().setText(YiBanLoginActivity.this.mPasswordValue);
+                } else {
+                    YiBanLoginActivity.this.mPasswordEditor.editor().setText("");
+                }
+            }
+        });
+    }
+
+    /* access modifiers changed from: private */
+    public void gotoHomePage() {
+        NavigationHelper.pageToHomePage();
+    }
+
+    private void acceptAgreement() {
+        this.mAgreementCheck.toggle();
+    }
+
+    /* JADX WARNING: type inference failed for: r1v0, types: [android.content.Context, com.yiban.app.login.activity.YiBanLoginActivity, android.app.Activity] */
+    /* access modifiers changed from: private */
+    public void startLogin() {
+        Util.hideSoftInput(this, this);
+        this.mAccountValue = this.mAccountEditor.editor().getText().toString().trim();
+        this.mPasswordValue = this.mPasswordEditor.editor().getText().toString().trim();
+        handleLogin();
+    }
+
+    private void handleLogin() {
+        this.mLoginButton.setEnabled(false);
+        if (TextUtils.isEmpty(this.mAccountValue) || !Pattern.compile(Util.mobile_phone_rule).matcher(this.mAccountValue).find()) {
+            showWarnToast("请输入正确的手机号码");
+            this.mLoginButton.setEnabled(true);
+        } else if (TextUtils.isEmpty(this.mPasswordValue)) {
+            showWarnToast("请输入正确的密码");
+            this.mLoginButton.setEnabled(true);
+        } else if (!TextUtils.isEmpty(this.mPasswordValue) && this.mPasswordValue.length() > 20) {
+            showWarnToast("超过密码最大长度20");
+            this.mLoginButton.setEnabled(true);
+        } else if (!this.mAgreementCheck.isChecked()) {
+            showWarnToast("请阅读并同意易班相关服务协议");
+            this.mLoginButton.setEnabled(true);
+        } else {
+            updateLoginStatus(2);
+            LoginUtil.login(this, this.mAccountValue, this.mPasswordValue, new CallBack<LoginBean>() {
+                public void onResponse(LoginBean loginBean) {
+                    if (loginBean != null) {
+                        String encryptPasswordRSA = EncryptionHelper.encryptPasswordRSA(YiBanLoginActivity.this.mPasswordValue, JNIHelper.getPwdRSAPublicKey().getBytes());
+                        SPUtil.putString(YiBanLoginActivity.this.mAppSP, "login_account", YiBanLoginActivity.this.mAccountValue);
+                        SPUtil.putString(YiBanLoginActivity.this.mAppSP, "login_password", encryptPasswordRSA);
+                        if (LoginUtil.validateLoginProgress().booleanValue()) {
+                            YiBanLoginActivity.this.gotoHomePage();
+                        }
+                    }
+                }
+
+                public void onFailure(int i, String str) {
+                    if (i != 101 && i != 105 && i != 140 && i != 180 && i != 203) {
+                        YiBanLoginActivity.this.showWarnToast(str);
+                    } else if (TextUtils.isEmpty(str)) {
+                        YiBanLoginActivity.this.showWarnToast("登录出问题了！再试试～");
+                    } else {
+                        YiBanLoginActivity.this.showWarnToast(str);
+                    }
+                    YiBanLoginActivity.this.updateLoginStatus(1);
+                }
+            });
+        }
+    }
+
+    /* access modifiers changed from: private */
+    public void updateLoginStatus(int i) {
+        LogManager instance = LogManager.getInstance();
+        String str = this.TAG;
+        instance.d(str, "login status=" + i);
+        if (i == 1) {
+            this.mLoginButton.setEnabled(true);
+            this.mLoginButton.setText("登录");
+        } else if (i == 2) {
+            this.mLoginButton.setText("正在登录...");
+            this.mLoginButton.setEnabled(false);
+        }
+    }
+
+    private void updateLoginUI(String str) {
+        if (!TextUtils.isEmpty(str)) {
+            this.mAccountEditor.editor().setText(str);
+            this.mAccountEditor.editor().setSelection(str.length());
+            this.mAccountValue = str;
+        }
+        this.mPasswordEditor.editor().setText("");
+        this.mPasswordValue = "";
+    }
+
+    /* JADX WARNING: type inference failed for: r2v0, types: [android.content.Context, com.yiban.app.login.activity.YiBanLoginActivity] */
+    /* access modifiers changed from: private */
+    public void register() {
+        startActivity(new Intent(this, YiBanRegisterActivity.class));
+    }
+
+    /* JADX WARNING: type inference failed for: r2v0, types: [android.content.Context, com.yiban.app.login.activity.YiBanLoginActivity] */
+    private void forgetPassword() {
+        startActivity(new Intent(this, YiBanForgetPasswordActivity.class));
+    }
+
+    private void startVersionCheck() {
+        RetrofitUtil.request(this, this.mLoginService.checkVersionUpdate(), new CallBack<VersionCheckBean>() {
+            public void onResponse(VersionCheckBean versionCheckBean) {
+                if (versionCheckBean != null) {
+                    boolean z = false;
+                    YibanApplication.setShowUpdateDialog(false);
+                    if (versionCheckBean.getExist_update() == 1) {
+                        z = true;
+                    }
+                    if (z) {
+                        CheckUpdateHelper.checkUpdate(YiBanLoginActivity.this, Version.parseBy(versionCheckBean.getVersion()));
+                    }
+                }
+            }
+
+            public void onFailure(int i, String str) {
+                LogManager instance = LogManager.getInstance();
+                String access$800 = YiBanLoginActivity.this.TAG;
+                instance.d(access$800, "check version update error: " + str);
+            }
+        });
+    }
+
+    private void buildRegisterText() {
+        String str = "还没有账号，请立即" + "注册";
+        SpannableString spannableString = new SpannableString(str);
+        spannableString.setSpan(new ClickableSpan() {
+            public void onClick(View view) {
+                YiBanLoginActivity.this.register();
+            }
+
+            public void updateDrawState(TextPaint textPaint) {
+                super.updateDrawState(textPaint);
+                textPaint.setColor(YiBanLoginActivity.this.getResources().getColor(2131099765));
+                textPaint.setUnderlineText(false);
+            }
+        }, str.indexOf("注册"), str.length(), 33);
+        TextView textView = (TextView) findViewById(2131298812);
+        textView.setText(spannableString);
+        textView.setHighlightColor(0);
+        textView.setMovementMethod(LinkMovementMethod.getInstance());
+    }
+
+    private class PasswordEditorAction extends EditorAction {
+        public PasswordEditorAction(Context context, Activity activity) {
+            super(context, activity);
+        }
+
+        public boolean onEditorAction(TextView textView, int i, KeyEvent keyEvent) {
+            boolean z;
+            if (i == 2) {
+                YiBanLoginActivity.this.startLogin();
+                z = true;
+            } else {
+                z = false;
+            }
+            return !z ? super.onEditorAction(textView, i, keyEvent) : z;
+        }
+    }
+
+    private class NoCopyClickableSpan extends ClickableSpan {
+        public void onClick(View view) {
+        }
+
+        private NoCopyClickableSpan() {
+        }
+    }
+}
+
+
+================================
+package com.yiban.app.login.utils;
+
+import android.app.Activity;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.text.TextUtils;
+import com.yiban.app.application.YibanApplication;
+import com.yiban.app.base.activity.CommonActivity;
+import com.yiban.app.bean.User;
+import com.yiban.app.common.GlobalSetting;
+import com.yiban.app.db.ChatDatabaseManager;
+import com.yiban.app.dialog.SchoolVerifyDialog;
+import com.yiban.app.helper.CookieManagerHelper;
+import com.yiban.app.helper.EncryptionHelper;
+import com.yiban.app.helper.NavigationHelper;
+import com.yiban.app.helper.ViewModelHelper;
+import com.yiban.app.login.activity.YiBanLoginActivity;
+import com.yiban.app.login.bean.LoginBean;
+import com.yiban.app.login.bean.LoginUser;
+import com.yiban.app.login.bean.LogoutBean;
+import com.yiban.app.login.interfaces.LoginService;
+import com.yiban.app.utils.SPUtil;
+import com.yiban.app.utils.ThreadPoolUtil;
+import com.yiban.app.utils.UMengShare;
+import com.yiban.app.utils.YiBanAppUtil;
+import com.yiban.framework.cache.DiskCacheManager;
+import com.yiban.framework.net.retrofit.BaseResponse;
+import com.yiban.framework.net.retrofit.CallBack;
+import com.yiban.framework.net.retrofit.RetrofitUtil;
+import com.yiban.framework.net.task.support.NetTaskGlobalConfigure;
+import com.yiban.framework.net.util.NetworkUtil;
+import com.yiban.framework.push.YibanPush;
+import java.util.HashMap;
+import net.sqlcipher.database.SQLiteDatabase;
+import retrofit2.Call;
+
+public class LoginUtil {
+    private static LoginService mService = ((LoginService) RetrofitUtil.createService(LoginService.class));
+
+    public static void login(CommonActivity commonActivity, String str, String str2, final CallBack<LoginBean> callBack) {
+        GlobalSetting instance = GlobalSetting.getInstance();
+        String encryptPassword = EncryptionHelper.encryptPassword(str2);
+        HashMap hashMap = new HashMap();
+        hashMap.put("mobile", str);
+        hashMap.put("password", encryptPassword);
+        hashMap.put("ct", String.valueOf(2));
+        hashMap.put("app", String.valueOf(1));
+        hashMap.put("v", String.valueOf(instance.getAppVersion()));
+        hashMap.put("apn", NetworkUtil.getAPNType(commonActivity));
+        hashMap.put("identify", instance.getIMEI());
+        hashMap.put("sig", YibanApplication.getSig());
+        hashMap.put("token", "");
+        hashMap.put("device", instance.getDevice());
+        hashMap.put("sversion", String.valueOf(instance.getSdkVersion()));
+        hashMap.put("authCode", "");
+        RetrofitUtil.request(commonActivity, mService.login(hashMap), new CallBack<LoginBean>() {
+            public void onResponse(LoginBean loginBean) {
+                try {
+                    SharedPreferences App = SPUtil.instance().App();
+                    String access_token = loginBean.getAccess_token();
+                    LoginUser user = loginBean.getUser();
+                    User parseUserBy = User.parseUserBy(user, access_token);
+                    if (parseUserBy != null) {
+                        User.setCurrentUser(parseUserBy);
+                        User.storeLoginUser(user, access_token);
+                    }
+                    if (!TextUtils.isEmpty(loginBean.getRedirect())) {
+                        SPUtil.putString(App, "k_login_show_organization_province_page", loginBean.getRedirect());
+                    }
+                    LoginUtil.registerSessionInvalidListener();
+                    UMengShare.onProfileSignIn();
+                    YibanPush.setAlias();
+                    if (callBack != null) {
+                        callBack.onResponse(loginBean);
+                    }
+                } catch (Exception e) {
+                    CallBack callBack = callBack;
+                    if (callBack != null) {
+                        callBack.onFailure(101, e.getMessage());
+                    }
+                    e.printStackTrace();
+                }
+            }
+
+            public void onFailure(int i, String str) {
+                CallBack callBack = callBack;
+                if (callBack != null) {
+                    callBack.onFailure(i, str);
+                }
+            }
+        });
+    }
+
+    public static void autoLogin(CommonActivity commonActivity, boolean z, final CallBack<LoginBean> callBack) {
+        Call<BaseResponse<LoginBean>> call;
+        if (z) {
+            call = mService.autoLoginTimeOut();
+        } else {
+            call = mService.autoLogin();
+        }
+        RetrofitUtil.request(commonActivity, call, new CallBack<LoginBean>() {
+            public void onResponse(LoginBean loginBean) {
+                if (callBack != null) {
+                    SharedPreferences App = SPUtil.instance().App();
+                    String access_token = loginBean.getAccess_token();
+                    LoginUser user = loginBean.getUser();
+                    User parseUserBy = User.parseUserBy(user, access_token);
+                    if (parseUserBy != null) {
+                        User.setCurrentUser(parseUserBy);
+                        User.storeLoginUser(user, access_token);
+                    }
+                    LoginUtil.registerSessionInvalidListener();
+                    ChatDatabaseManager.release();
+                    UMengShare.onProfileSignIn();
+                    YibanPush.setAlias();
+                    if (!TextUtils.isEmpty(loginBean.getRedirect())) {
+                        SPUtil.putString(App, "k_login_show_organization_province_page", loginBean.getRedirect());
+                    }
+                    callBack.onResponse(loginBean);
+                }
+            }
+
+            public void onFailure(int i, String str) {
+                CallBack callBack = callBack;
+                if (callBack != null) {
+                    callBack.onFailure(i, str);
+                }
+            }
+        });
+    }
+
+    public static Boolean validateLoginProgress() {
+        User currentUser = User.getCurrentUser();
+        if (currentUser != null) {
+            if (TextUtils.isEmpty(currentUser.getPhone())) {
+                NavigationHelper.pageToBindMobilePage();
+                return false;
+            } else if (currentUser.getNewSchool() == null || currentUser.getNewSchool().getSchoolId() == 0) {
+                NavigationHelper.pageToCompleteInfoPage();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static Boolean checkSchoolVerify(String str) {
+        if (User.getCurrentUser().isSchoolVerify()) {
+            return true;
+        }
+        SchoolVerifyDialog.showDialog(str);
+        return false;
+    }
+
+    public static void logout() {
+        UMengShare.onProfileSignOff();
+        NetTaskGlobalConfigure.setOnSessionInvalidListener((NetTaskGlobalConfigure.OnSessionInvalidListener) null);
+        YibanApplication instance = YibanApplication.getInstance();
+        Context context = YibanApplication.getContext();
+        DiskCacheManager.destroyInstance();
+        SPUtil.instance().User().edit().clear().apply();
+        SPUtil.putBoolean(SPUtil.instance().App(), "k_web_cache_enable", false);
+        SPUtil.putString(SPUtil.instance().App(), "k_login_show_organization_province_page", "");
+        SPUtil.putString(SPUtil.instance().App(), "self_avatar_url", "");
+        SPUtil.putInt(SPUtil.instance().User(), "USERID", 0);
+        SPUtil.putString(SPUtil.instance().User(), "access_token", "");
+        CookieManagerHelper.clearCookies();
+        YibanPush.unsetAlias();
+        ChatDatabaseManager.release();
+        ViewModelHelper.of().clearAllViewModel();
+        NotificationManager notificationManager = (NotificationManager) instance.getSystemService("notification");
+        if (notificationManager != null) {
+            notificationManager.cancelAll();
+        }
+        Intent intent = new Intent(context, YiBanLoginActivity.class);
+        intent.addFlags(SQLiteDatabase.CREATE_IF_NECESSARY);
+        intent.addFlags(32768);
+        Activity topRunningActivity = YiBanAppUtil.getTopRunningActivity();
+        if (topRunningActivity != null) {
+            topRunningActivity.startActivity(intent);
+        } else {
+            instance.startActivity(intent);
+        }
+    }
+
+    public static void logout(CallBack<LogoutBean> callBack) {
+        RetrofitUtil.request(mService.logout(), (CallBack) null);
+        ThreadPoolUtil.getInstance().execute(new Runnable() {
+            public final void run() {
+                LoginUtil.lambda$logout$0(CallBack.this);
+            }
+        });
+    }
+
+    static /* synthetic */ void lambda$logout$0(CallBack callBack) {
+        try {
+            Thread.sleep(500);
+            if (callBack == null) {
+                logout();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            if (callBack == null) {
+                logout();
+            }
+        }
+    }
+
+    /* access modifiers changed from: private */
+    public static void registerSessionInvalidListener() {
+        NetTaskGlobalConfigure.setOnSessionInvalidListener(new NetTaskGlobalConfigure.OnSessionInvalidListener() {
+            public void showSessionResponseInvalidTip() {
+                LoginUtil.logout();
+            }
+        });
+    }
+}
+================================
+package com.yiban.app.helper;
+
+import android.util.Base64;
+import com.blankj.utilcode.util.EncryptUtils;
+import com.tencent.mm.opensdk.modelmsg.WXMediaMessage;
+import com.yiban.app.jni.JNIHelper;
+import java.nio.charset.StandardCharsets;
+import javax.crypto.Cipher;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+public class EncryptionHelper {
+    private static final String TAG = "EncryptionHelper";
+    private static final String key = "yibanEncryPlugin";
+    private static final String transformation = "RSA/None/PKCS1Padding";
+
+    public static String encryptPassword(String str) {
+        return new String(EncryptUtils.encryptRSA2Base64(str.getBytes(), base64Decode(JNIHelper.getEncodePwdPublicKey().getBytes()), WXMediaMessage.DESCRIPTION_LENGTH_LIMIT, transformation));
+    }
+
+    private static byte[] base64Decode(byte[] bArr) {
+        return Base64.decode(bArr, 2);
+    }
+
+    public static String decodeConfigString(String str) {
+        byte[] decryptBase64RSA = EncryptUtils.decryptBase64RSA(str.getBytes(), base64Decode(JNIHelper.getEncodeConfigPrivateKey().getBytes()), 4096, transformation);
+        if (decryptBase64RSA == null) {
+            return "";
+        }
+        return new String(decryptBase64RSA);
+    }
+
+    public static String decryptEncodeString(String str) {
+        try {
+            return new String(decrypt(base64Decode(str.getBytes(StandardCharsets.UTF_8)), key.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "";
+        }
+    }
+
+    private static byte[] decrypt(byte[] bArr, byte[] bArr2, byte[] bArr3) throws Exception {
+        Cipher instance = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        instance.init(2, new SecretKeySpec(bArr2, "AES"), new IvParameterSpec(bArr3));
+        return instance.doFinal(bArr);
+    }
+
+    public static String decryptPasswordRSA(String str, byte[] bArr) {
+        try {
+            return new String(EncryptUtils.decryptBase64RSA(str.getBytes(), base64Decode(bArr), 4096, transformation));
+        } catch (Exception unused) {
+            return "";
+        }
+    }
+
+    public static String encryptPasswordRSA(String str, byte[] bArr) {
+        try {
+            return new String(EncryptUtils.encryptRSA2Base64(str.getBytes(), base64Decode(bArr), WXMediaMessage.DESCRIPTION_LENGTH_LIMIT, transformation));
+        } catch (Exception unused) {
+            return "";
+        }
+    }
+}
+
+
+================================
+package com.yiban.app.jni;
+
+import com.yiban.app.application.YibanApplication;
+
+public class JNIHelper {
+    public static boolean checkPackageName() {
+        return JNI.getInstance().checkPackageName(YibanApplication.getContext());
+    }
+
+    public static boolean checkSignature() {
+        return JNI.getInstance().checkSignature(YibanApplication.getContext());
+    }
+
+    public static String getEncodePwdPublicKey() {
+        return JNI.getInstance().getEncodePwdPublicKey(YibanApplication.getContext());
+    }
+
+    public static String getEncodeConfigPrivateKey() {
+        return JNI.getInstance().getEncodeConfigPrivateKey(YibanApplication.getContext());
+    }
+
+    public static String getPwdRSAPublicKey() {
+        return JNI.getInstance().getPwdRSAPublicKey(YibanApplication.getContext());
+    }
+
+    public static String getPwdRSAPrivateKey() {
+        return JNI.getInstance().getPwdRSAPrivateKey(YibanApplication.getContext());
+    }
+}
